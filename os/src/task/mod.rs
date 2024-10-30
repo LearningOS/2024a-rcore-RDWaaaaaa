@@ -13,10 +13,10 @@ mod context;
 mod switch;
 #[allow(clippy::module_inception)]
 mod task;
-
-use crate::config::MAX_APP_NUM;
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
@@ -54,6 +54,8 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            syscall_times: [0; MAX_SYSCALL_NUM],
+            time_first_called: 0,
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
@@ -168,4 +170,30 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// get_time_first_called
+pub fn get_time_first_called() -> usize {
+    let current_task = TASK_MANAGER.inner.exclusive_access().current_task;
+    TASK_MANAGER.inner.exclusive_access().tasks[current_task].time_first_called
+}
+
+/// get_syscall_times
+pub fn get_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    let current_task = TASK_MANAGER.inner.exclusive_access().current_task;
+    TASK_MANAGER.inner.exclusive_access().tasks[current_task].syscall_times
+}
+
+/// update_time_first_called
+pub fn update_time_first_called() {
+    let current_task = TASK_MANAGER.inner.exclusive_access().current_task;
+    if 0 == TASK_MANAGER.inner.exclusive_access().tasks[current_task].time_first_called {
+        TASK_MANAGER.inner.exclusive_access().tasks[current_task].time_first_called = get_time_ms();
+    }
+}
+
+/// update_syscall_times
+pub fn update_syscall_times(syscall_id: usize) {
+    let current_task = TASK_MANAGER.inner.exclusive_access().current_task;
+    TASK_MANAGER.inner.exclusive_access().tasks[current_task].syscall_times[syscall_id] += 1;
 }
