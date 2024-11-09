@@ -17,11 +17,13 @@ mod task;
 use crate::loader::{get_app_data, get_num_app};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
+use crate::mm::MemorySet;
+use crate::config::MAX_SYSCALL_NUM;
+use crate::timer::get_time_ms;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
-
 pub use context::TaskContext;
 
 /// The task manager, where all the tasks are managed.
@@ -38,6 +40,7 @@ pub struct TaskManager {
     num_app: usize,
     /// use inner value to get mutable access
     inner: UPSafeCell<TaskManagerInner>,
+
 }
 
 /// The task manager inner in 'UPSafeCell'
@@ -153,6 +156,12 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+    fn get_app_memory_set(&self) -> *mut MemorySet {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        &mut inner.tasks[cur].memory_set
+    }
+
 }
 
 /// Run the first task in task list.
@@ -201,4 +210,33 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// get_time_first_called
+pub fn get_time_first_called() -> usize {
+    let current_task = TASK_MANAGER.inner.exclusive_access().current_task;
+    TASK_MANAGER.inner.exclusive_access().tasks[current_task].time_first_called
+}
+
+/// get_syscall_times
+pub fn get_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    let current_task = TASK_MANAGER.inner.exclusive_access().current_task;
+    TASK_MANAGER.inner.exclusive_access().tasks[current_task].syscall_times
+}
+
+/// update_time_first_called
+pub fn update_time_first_called() {
+    let current_task = TASK_MANAGER.inner.exclusive_access().current_task;
+    if 0 == TASK_MANAGER.inner.exclusive_access().tasks[current_task].time_first_called {
+        TASK_MANAGER.inner.exclusive_access().tasks[current_task].time_first_called = get_time_ms();
+    }
+}
+/// update_syscall_times
+pub fn update_syscall_times(syscall_id: usize) {
+    let current_task = TASK_MANAGER.inner.exclusive_access().current_task;
+    TASK_MANAGER.inner.exclusive_access().tasks[current_task].syscall_times[syscall_id] += 1;
+}
+/// get_app_memory_set
+pub fn get_app_memory_set() -> *mut MemorySet {
+    TASK_MANAGER.get_app_memory_set()
 }
