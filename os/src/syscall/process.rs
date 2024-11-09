@@ -113,7 +113,8 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
 
 // YOUR JOB: Implement mmap.
 pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
-    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
+    trace!("kernel: sys_mmap");
+    // return -1;
     if start % PAGE_SIZE != 0 {
         return -1;
     }
@@ -121,12 +122,12 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     if port & !0x7 != 0 || port & 0x7 == 0 {
         return -1;
     }
-    let page_count = (len + PAGE_SIZE - 1) / PAGE_SIZE;
+    
     let mut permission = MapPermission::U;
     if (port & 0x1) != 0 { permission |= MapPermission::R; }
     if (port & 0x2) != 0 { permission |= MapPermission::W; }
     if (port & 0x4) != 0 { permission |= MapPermission::X; }
-
+    let page_count = (len + PAGE_SIZE - 1) / PAGE_SIZE;
     let memory_set = get_app_memory_set();
     for i in 0..page_count {
         let vpa = VirtAddr(start + i * PAGE_SIZE);
@@ -150,11 +151,10 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
 
 // YOUR JOB: Implement munmap.
 pub fn sys_munmap(start: usize, len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
+    trace!("kernel: sys_munmap");
     if start % PAGE_SIZE != 0 {
         return -1;
     }
-
     let page_count = (len + PAGE_SIZE - 1) / PAGE_SIZE;
     let memory_set = get_app_memory_set();
     for i in 0..page_count {
@@ -164,15 +164,17 @@ pub fn sys_munmap(start: usize, len: usize) -> isize {
                 Some(pte) => {
                     if !pte.is_valid() {
                         return -1;
-                    } else {
-                        (*memory_set).pop(start.into());
-                    }
+                    } 
                 }
                 None => {}
             }
         }
     }
+    unsafe{
+        (*memory_set).pop(VirtAddr::from(start).into());
+    }
     0
+
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {
