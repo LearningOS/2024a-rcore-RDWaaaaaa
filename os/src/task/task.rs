@@ -10,6 +10,7 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
+use crate::config::MAX_SYSCALL_NUM;
 
 /// Task control block structure
 ///
@@ -71,6 +72,14 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// Number of times called
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+
+    /// The time when it was first called
+    pub time_first_called: usize,
+
+    pub priority: isize,
 }
 
 impl TaskControlBlockInner {
@@ -135,6 +144,9 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    syscall_times: [0; MAX_SYSCALL_NUM],
+                    time_first_called: 0,
+                    priority: 16,
                 })
             },
         };
@@ -176,7 +188,26 @@ impl TaskControlBlock {
         *inner.get_trap_cx() = trap_cx;
         // **** release current PCB
     }
-
+    /// spawn a new process
+    pub fn spawn(self: &Arc<Self>, elf_data: &[u8]) -> Arc<Self> {
+        let new_task = Arc::new(TaskControlBlock::new(elf_data));
+        {
+            let mut parent_inner = self.inner_exclusive_access();
+            parent_inner.children.push(new_task.clone());
+        }
+        {
+            let parent_inner = self.inner_exclusive_access();
+            let mut new_inner = new_task.inner_exclusive_access();
+            new_inner.priority = parent_inner.priority;
+            new_inner.parent = Some(Arc::downgrade(self));
+            new_inner.heap_bottom = parent_inner.heap_bottom;
+            new_inner.program_brk = parent_inner.program_brk;
+            new_inner.base_size = parent_inner.base_size;
+            let trap_cx = new_inner.get_trap_cx();
+            trap_cx.x[10] = 0;
+        }
+        new_task
+    }
     /// parent process fork the child process
     pub fn fork(self: &Arc<TaskControlBlock>) -> Arc<TaskControlBlock> {
         // ---- hold parent PCB lock
@@ -216,6 +247,9 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    syscall_times: [0; MAX_SYSCALL_NUM],
+                    time_first_called: 0,
+                    priority: parent_inner.priority,
                 })
             },
         });
@@ -230,7 +264,7 @@ impl TaskControlBlock {
         // **** release child PCB
         // ---- release parent PCB
     }
-
+    
     /// get pid of process
     pub fn getpid(&self) -> usize {
         self.pid.0
