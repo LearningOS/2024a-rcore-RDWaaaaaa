@@ -11,6 +11,8 @@ use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
+use crate::timer::get_time_ms;
+use crate::config::MAX_SYSCALL_NUM;
 
 /// Processor management structure
 pub struct Processor {
@@ -44,12 +46,41 @@ impl Processor {
     pub fn current(&self) -> Option<Arc<TaskControlBlock>> {
         self.current.as_ref().map(Arc::clone)
     }
+
 }
 
 lazy_static! {
     pub static ref PROCESSOR: UPSafeCell<Processor> = unsafe { UPSafeCell::new(Processor::new()) };
 }
 
+/// get_time_first_called
+pub fn get_time_first_called() -> usize {
+    if let Some(ref task) = current_task() {
+        task.inner_exclusive_access().time_first_called
+    } else {
+        0
+    }
+}
+/// get_syscall_times
+pub fn get_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    if let Some(ref task) = current_task() {
+        task.inner_exclusive_access().syscall_times
+    } else {
+        [0; MAX_SYSCALL_NUM]
+    }
+}
+/// update_time_first_called
+pub fn update_time_first_called() {
+    if let Some(ref task) = current_task() {
+        task.inner_exclusive_access().time_first_called = get_time_ms();
+    }
+}
+/// update_syscall_times
+pub fn update_syscall_times(syscall_id: usize) {
+    if let Some(ref task) = current_task() {
+        task.inner_exclusive_access().syscall_times[syscall_id] += 1;
+    }
+}
 ///The main part of process execution and scheduling
 ///Loop `fetch_task` to get the process that needs to run, and switch the process through `__switch`
 pub fn run_tasks() {
