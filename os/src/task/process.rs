@@ -49,6 +49,20 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// sem allocated
+    pub sem_allocated: Vec<Vec<u32>>,
+    /// sem needed
+    pub sem_need: Vec<Vec<u32>>,
+    /// sem available now
+    pub sem_available: Vec<u32>,
+    /// sem allocated
+    pub mutex_allocated: Vec<Vec<u32>>,
+    /// sem needed
+    pub mutex_need: Vec<Vec<u32>>,
+    /// sem available now
+    pub mutex_available: Vec<u32>,
+    /// enable_deadlock_detect
+    pub enable_deadlock_detect: bool,
 }
 
 impl ProcessControlBlockInner {
@@ -82,6 +96,46 @@ impl ProcessControlBlockInner {
     pub fn get_task(&self, tid: usize) -> Arc<TaskControlBlock> {
         self.tasks[tid].as_ref().unwrap().clone()
     }
+    pub fn check_deadlock(&self, mode: usize) -> bool {
+        if !self.enable_deadlock_detect {
+            return false;
+        }
+
+        let (mut avail, allocated, need) = if mode == 0 {
+            (self.mutex_available.clone(), self.mutex_allocated.clone(), self.mutex_need.clone())
+        } else {
+            (self.sem_available.clone(), self.sem_allocated.clone(), self.sem_need.clone())
+        };
+
+        let th_num = need.len();
+        let res_num = avail.len();
+        let mut done = vec![false; th_num];
+        let mut progress_made = true;
+
+        while progress_made {
+            progress_made = false;
+            for i in 0..th_num {
+                if done[i] || !Self::can_satisfy(&avail, &need[i]) {
+                    continue;
+                }
+                // Mark this thread as done and update available resources
+                done[i] = true;
+                progress_made = true;
+                for j in 0..res_num {
+                    avail[j] += allocated[i][j];
+                }
+            }
+        }
+
+        // Check if all threads are done; if not, there is a deadlock
+        !done.iter().all(|&finished| finished)
+    }
+
+    /// Helper function to check if available resources can satisfy a thread's needs
+    fn can_satisfy(avail: &[u32], need: &[u32]) -> bool {
+        need.iter().enumerate().all(|(j, &need_j)| need_j <= avail[j])
+    }
+
 }
 
 impl ProcessControlBlock {
@@ -119,6 +173,13 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    sem_allocated: vec![Vec::new()],
+                    sem_need: vec![Vec::new()],
+                    sem_available: Vec::new(),
+                    mutex_allocated: vec![Vec::new()],
+                    mutex_need: vec![Vec::new()],
+                    mutex_available: Vec::new(),
+                    enable_deadlock_detect: false
                 })
             },
         });
@@ -245,6 +306,13 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    sem_allocated: vec![Vec::new()],
+                    sem_need: vec![Vec::new()],
+                    sem_available: Vec::new(),
+                    mutex_allocated: vec![Vec::new()],
+                    mutex_need: vec![Vec::new()],
+                    mutex_available: Vec::new(),
+                    enable_deadlock_detect: false
                 })
             },
         });
